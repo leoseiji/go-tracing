@@ -1,0 +1,3 @@
+GET http://localhost:8080/weather-service-b/06233903 HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
