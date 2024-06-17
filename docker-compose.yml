@@ -39,11 +39,11 @@ services:
       - "4317:4317"   # OTLP gRPC receiver
       - "55679:55679" # zpages extension
 
-  cep_weather:
+  go_tracing:
     container_name: go_tracing
     build:
       context: .
-      dockerfile: ./go_tracing/Dockerfile
+      dockerfile: ./Dockerfile
     image: go_tracing
     ports:
       - "8080:8080"
