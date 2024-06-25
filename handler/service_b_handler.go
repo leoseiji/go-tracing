@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,14 +14,18 @@ import (
 
 	"github.com/leoseiji/go-tracing/dto"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var ErrCEPNotFound = fmt.Errorf("can not find zipcode")
 var ErrCEPInvalid = fmt.Errorf("invalid zipcode")
 
 func GetWeatherHandler(w http.ResponseWriter, r *http.Request) {
+	carrier := propagation.HeaderCarrier(r.Header)
+	ctx := r.Context()
+	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
 	tracer := otel.Tracer("weather-service-b")
-	_, span := tracer.Start(r.Context(), "GetWeatherHandler")
+	_, span := tracer.Start(ctx, "GetWeatherHandler")
 	defer span.End()
 
 	cep := r.PathValue("cep")
@@ -31,7 +36,7 @@ func GetWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	location, err := getLocationByCEP(cep)
+	location, err := getLocationByCEP(ctx, cep)
 	if errors.Is(err, ErrCEPNotFound) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -41,7 +46,7 @@ func GetWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	weather, err := getWeatherByLocation(location.Location)
+	weather, err := getWeatherByLocation(ctx, location.Location)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -67,7 +72,11 @@ func isCepValid(cep string) bool {
 	return true
 }
 
-func getLocationByCEP(cep string) (*dto.Location, error) {
+func getLocationByCEP(ctx context.Context, cep string) (*dto.Location, error) {
+	tracer := otel.Tracer("weather-service-b-get-location-by-cep")
+	_, span := tracer.Start(ctx, "getLocationByCEP")
+	defer span.End()
+
 	url := fmt.Sprintf("http://viacep.com.br/ws/%s/json/", cep)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -75,6 +84,7 @@ func getLocationByCEP(cep string) (*dto.Location, error) {
 		return nil, err
 	}
 
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("error executing ViaCEP request. Err:%s", err.Error())
@@ -110,7 +120,11 @@ func getLocationByCEP(cep string) (*dto.Location, error) {
 
 }
 
-func getWeatherByLocation(location string) (*dto.Weather, error) {
+func getWeatherByLocation(ctx context.Context, location string) (*dto.Weather, error) {
+	tracer := otel.Tracer("weather-service-b-get-weather-by-location")
+	_, span := tracer.Start(ctx, "getWeatherByLocation")
+	defer span.End()
+
 	location = strings.Replace(location, " ", "%20", -1)
 	reqUrl := fmt.Sprintf("http://api.weatherapi.com/v1/current.json?key=e6c189ac26084b8a84213356241706&q=%s", url.PathEscape(location))
 
@@ -121,6 +135,7 @@ func getWeatherByLocation(location string) (*dto.Weather, error) {
 		return nil, err
 	}
 
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("error executing weatherAPI request. Err:%s", err.Error())

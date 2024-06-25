@@ -9,13 +9,18 @@ import (
 
 	"github.com/leoseiji/go-tracing/dto"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var ErrInternalServerError = fmt.Errorf("internal server error")
 
 func PostWeatherHandler(w http.ResponseWriter, r *http.Request) {
+	carrier := propagation.HeaderCarrier(r.Header)
+	ctx := r.Context()
+	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
+
 	tracer := otel.Tracer("weather-service-a")
-	ctx, span := tracer.Start(r.Context(), "PostWeatherHandler")
+	ctx, span := tracer.Start(ctx, "PostWeatherHandler")
 	defer span.End()
 
 	var weatherCepRequest dto.WeatherCepRequest
@@ -37,7 +42,7 @@ func PostWeatherHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, ErrInternalServerError.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(cepWeatherReq.Header))
 	resp, err := http.DefaultClient.Do(cepWeatherReq)
 	if err != nil {
 		log.Printf("error while making request: %s", err)
